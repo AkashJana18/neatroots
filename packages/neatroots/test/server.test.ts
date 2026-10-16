@@ -396,6 +396,27 @@ describe("server", () => {
     expect(body).not.toContain("secret-content");
   });
 
+  it("a missing asset falls back to the app shell without the immutable cache header", async () => {
+    const uiDir = findUiDir();
+    if (!uiDir) return; // UI not built in this environment; skip rather than false-pass
+    const tb = await served();
+    const missing = await fetch(`${tb.url}/assets/definitely-not-here.js`);
+    expect(missing.status).toBe(200);
+    expect(missing.headers.get("content-type")).toMatch(/text\/html/);
+    expect(missing.headers.get("cache-control") ?? "").not.toMatch(/immutable/);
+    const dir = await fetch(`${tb.url}/assets/`);
+    expect(dir.status).toBe(200);
+    expect(dir.headers.get("cache-control") ?? "").not.toMatch(/immutable/);
+    // a real built asset keeps the immutable header
+    const assetsDir = path.join(uiDir, "assets");
+    const real = fs.existsSync(assetsDir) ? fs.readdirSync(assetsDir).find((f) => f.endsWith(".js")) : undefined;
+    if (real) {
+      const asset = await fetch(`${tb.url}/assets/${real}`);
+      expect(asset.status).toBe(200);
+      expect(asset.headers.get("cache-control")).toMatch(/immutable/);
+    }
+  });
+
   it("gives a helpful error (not a raw fetch failure) when no LLM is reachable", async () => {
     const tb = await served(false); // engine on, but no LLM configured (dead base url)
     const r = await fetch(`${tb.url}/api/ask`, { method: "POST", headers: { "content-type": "application/json", origin: tb.url.replace("127.0.0.1", "localhost") }, body: JSON.stringify({ question: "what happened?" }) });
