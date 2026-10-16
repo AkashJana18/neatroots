@@ -56,13 +56,9 @@ export function parseChecks(text: string): { checks: Check[]; errors: { id?: str
   return { checks, errors };
 }
 
-/**
- * Rewrites every check with this id in a checks file and leaves all other text as written:
- * comments, other checks (including ones that don't validate yet) and other documents.
- * Returns undefined when the file has no check with this id.
- */
-function replaceInYaml(text: string, check: Check): string | undefined {
-  const isOurs = (n: unknown): n is YAML.YAMLMap => YAML.isMap(n) && n.get("id") === check.id;
+/** Every node in a checks file whose id matches, with its text range. */
+function checkSpans(text: string, id: string): { start: number; end: number; node: YAML.YAMLMap }[] {
+  const isOurs = (n: unknown): n is YAML.YAMLMap => YAML.isMap(n) && n.get("id") === id;
   const spans: { start: number; end: number; node: YAML.YAMLMap }[] = [];
   for (const doc of YAML.parseAllDocuments(text)) {
     if (doc.errors.length) continue;
@@ -73,6 +69,16 @@ function replaceInYaml(text: string, check: Check): string | undefined {
       if (isOurs(node) && node.range) spans.push({ start: node.range[0], end: node.range[1], node });
     }
   }
+  return spans;
+}
+
+/**
+ * Rewrites every check with this id in a checks file and leaves all other text as written:
+ * comments, other checks (including ones that don't validate yet) and other documents.
+ * Returns undefined when the file has no check with this id.
+ */
+function replaceInYaml(text: string, check: Check): string | undefined {
+  const spans = checkSpans(text, check.id);
   if (!spans.length) return undefined;
   const eol = text.includes("\r\n") ? "\r\n" : "\n";
   let out = text;
@@ -87,6 +93,54 @@ function replaceInYaml(text: string, check: Check): string | undefined {
     out = out.slice(0, start) + next + out.slice(end);
   }
   return out;
+}
+
+/**
+ * Removes every check with this id from a checks file and leaves the rest of the file as written:
+ * comments, other checks (including ones that don't validate yet) and other documents.
+ * Returns undefined when the file has no check with this id.
+ */
+function removeFromYaml(text: string, id: string): string | undefined {
+  const spans = checkSpans(text, id);
+  if (!spans.length) return undefined;
+  let out = text;
+  for (const { start: rawStart, end: rawEnd } of [...spans].reverse()) {
+    let start = rawStart;
+    let end = rawEnd;
+    const lineStart = text.lastIndexOf("\n", start - 1) + 1;
+    if (/^\s*-\s*$|^\s*-\s+$/.test(text.slice(lineStart, start))) {
+      start = lineStart;
+      // A block mapping's range ends after its last newline; an inline one may carry a trailing comment.
+      const lineEnd = text.indexOf("\n", end);
+      const tail = lineEnd < 0 ? text.slice(end) : text.slice(end, lineEnd);
+      if (text[rawEnd - 1] !== "\n" && /^\s*(#.*)?$/.test(tail)) end = lineEnd < 0 ? text.length : lineEnd + 1;
+    } else {
+      // A flow mapping or a document-level mapping: take one separating comma with it.
+      let after = end;
+      while (text[after] === " ") after++;
+      if (text[after] === ",") end = after + 1;
+      else {
+        let before = start;
+        while (text[before - 1] === " ") before--;
+        if (text[before - 1] === ",") start = before - 1;
+      }
+    }
+    out = out.slice(0, start) + out.slice(end);
+  }
+  return out;
+}
+
+/** True when text still holds a check, or text neatroots can't parse and must not drop. */
+function hasCheckNodes(text: string): boolean {
+  for (const doc of YAML.parseAllDocuments(text)) {
+    if (doc.errors.length) return true;
+    const contents = doc.contents;
+    const wrapped = YAML.isMap(contents) ? contents.get("checks", true) : undefined;
+    const list = YAML.isSeq(contents) ? contents : YAML.isSeq(wrapped) ? wrapped : undefined;
+    if (YAML.isMap(contents) && contents.get("id") !== undefined) return true;
+    if (list?.items.some((n) => YAML.isMap(n) && n.get("id") !== undefined)) return true;
+  }
+  return false;
 }
 
 export function checkToYaml(check: Check): string {
@@ -212,11 +266,14 @@ export class CheckRegistry {
     const lc = this.checks.get(id);
     if (!lc || lc.source === "library") return false;
     if (lc.path && fs.existsSync(lc.path)) {
-      const { checks } = parseChecks(fs.readFileSync(lc.path, "utf8"));
-      if (checks.length <= 1) fs.unlinkSync(lc.path);
-      else {
-        fs.writeFileSync(lc.path, YAML.stringify(checks.filter((c) => c.id !== id)), "utf8");
-      }
+      const text = fs.readFileSync(lc.path, "utf8");
+      const stripped = removeFromYaml(text, id);
+      if (stripped === undefined) {
+        const { checks } = parseChecks(text);
+        if (checks.length <= 1) fs.unlinkSync(lc.path);
+        else fs.writeFileSync(lc.path, YAML.stringify(checks.filter((c) => c.id !== id)), "utf8");
+      } else if (hasCheckNodes(stripped)) fs.writeFileSync(lc.path, stripped, "utf8");
+      else fs.unlinkSync(lc.path);
     }
     this.store.db.prepare("DELETE FROM checks WHERE id = ?").run(id);
     this.reload();

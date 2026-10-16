@@ -166,3 +166,55 @@ it("POST /api/checks (the Checks page editor) updates a project check in its fil
     await t.close();
   }
 });
+
+it("removing a check keeps its file's other checks, drafts and comments", () => {
+  const file = path.join(project, "refunds.yaml");
+  fs.writeFileSync(file, team);
+  const r = registry();
+
+  expect(r.remove("big-run")).toBe(true);
+
+  expect(r.get("big-run")).toBeUndefined();
+  expect(registry().errors.some((e) => e.id === "refund-tone")).toBe(true);
+  const text = read(file);
+  expect(text).not.toContain("big-run");
+  expect(text).toContain("# Team checks for the refund agent");
+  expect(text).toContain("# WIP: fix the scale before turning this on");
+  expect(text).toContain("refund-tone");
+  expect(text).toContain("no-refund-loop");
+
+  expect(r.remove("no-refund-loop")).toBe(true);
+  expect(fs.existsSync(file)).toBe(true);
+  expect(read(file)).toContain("refund-tone");
+});
+
+it("removing an inline check keeps its inline neighbour and their comments", () => {
+  const file = path.join(project, "checks.yaml");
+  const text = `checks:
+  - { id: big-run, kind: rule, rule: { type: count, span: { type: tool, name: lookup_order }, at_least: 5 } }   # raise later
+  - id: no-refund-loop   # keep
+    kind: rule
+    rule: { type: repeat, span: { type: tool, name: issue_refund }, same: [tool, input], at_least: 2 }
+`;
+  fs.writeFileSync(file, text);
+  const r = registry();
+
+  expect(r.remove("big-run")).toBe(true);
+
+  const after = read(file);
+  expect(after).not.toContain("big-run");
+  expect(after).not.toContain("raise later");
+  expect(after).toContain("no-refund-loop   # keep");
+  expect(registry().get("no-refund-loop")?.path).toBe(file);
+});
+
+it("removing a lone check deletes its file", () => {
+  const r = registry();
+  const saved = r.save({ ...bigRun(9), id: "fresh-check" } as Check, "user");
+  expect(fs.existsSync(saved.path!)).toBe(true);
+
+  expect(r.remove("fresh-check")).toBe(true);
+
+  expect(r.get("fresh-check")).toBeUndefined();
+  expect(fs.existsSync(saved.path!)).toBe(false);
+});
