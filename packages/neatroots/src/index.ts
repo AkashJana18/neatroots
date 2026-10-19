@@ -1,6 +1,6 @@
 export { Roots } from "./core.js";
 export { createApp, startServer } from "./server/app.js";
-export { VERSION } from "./version.js";
+export { BUILD, VERSION } from "./version.js";
 export * from "./otlp/codec.js";
 export * from "./otlp/types.js";
 export { parseChecks } from "./checks/registry.js";

@@ -24,7 +24,7 @@ import { askRuns } from "../engine/assist.js";
 import { loadTrace } from "../engine/trace.js";
 import { UnknownSpanError } from "../engine/engine.js";
 import type { RunRow } from "../types.js";
-import { VERSION } from "../version.js";
+import { BUILD, VERSION } from "../version.js";
 
 export { checkFromInput } from "./api-checks.js";
 
@@ -123,6 +123,7 @@ export function mountApi(app: Hono, roots: Roots): void {
     return c.json({
       name: "neatroots",
       version: VERSION,
+      build: BUILD,
       uptime_ms: Date.now() - roots.startedMs,
       port: roots.config.port,
       home: roots.home,

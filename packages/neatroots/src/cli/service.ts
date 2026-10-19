@@ -5,7 +5,7 @@ import path from "node:path";
 import type { Command } from "commander";
 import { rootsHome, loadConfig } from "../config.js";
 import { api, port, running } from "./util.js";
-import { bundleDir, cliPath, sourceDir } from "../util/install.js";
+import { buildIdOf, bundleDir, cliPath, installInfo, sourceDir } from "../util/install.js";
 
 const LABEL = "com.neatlogs.neatroots";
 
@@ -112,6 +112,28 @@ function restartService(): void {
   else spawnSync("systemctl", ["--user", "restart", "neatroots.service"], { stdio: "ignore" });
 }
 
+/** A copy of neatroots: what its `/api/status` or `--version` reports. */
+export interface NeatrootsCopy {
+  version: string;
+  build: string | null;
+}
+
+function describeCopy(copy: NeatrootsCopy): string {
+  return copy.build ? `${copy.version} (${copy.build})` : copy.version;
+}
+
+/**
+ * The line to print when the neatroots answering on `port` is not the copy just installed, or
+ * null when it is. A release candidate and its release carry the same version, so the build
+ * identity decides too; a server started before build identities existed reports none, and then
+ * the versions are all there is to compare.
+ */
+export function updateNotice(running: NeatrootsCopy, installed: NeatrootsCopy, port: number): string | null {
+  const buildChanged = !!running.build && !!installed.build && running.build !== installed.build;
+  if (running.version === installed.version && !buildChanged) return null;
+  return `! neatroots ${describeCopy(running)} is still running on port ${port}. Restart it to use ${describeCopy(installed)}: Ctrl+C in its terminal, then neatroots start`;
+}
+
 /** neatroots service (start at login) and neatroots update. */
 export function registerServiceCommands(program: Command): void {
   const service = program.command("service").description("Run neatroots in the background and start it at login");
@@ -198,7 +220,11 @@ export function registerServiceCommands(program: Command): void {
       if (!(await running(p))) return;
       const cli = bundle ? path.join(bundle, "neatroots", "dist", "cli.js") : path.join(dir!, "packages", "neatroots", "dist", "cli.js");
       const fresh = spawnSync(process.execPath, [cli, "--version"], { encoding: "utf8" }).stdout.trim();
-      const live = await api<{ version: string }>(p, "/api/status").then((s) => s.version).catch(() => "");
-      if (fresh && live && live !== fresh) console.log(`! neatroots ${live} is still running on port ${p}. Restart it to use ${fresh}: Ctrl+C in its terminal, then neatroots start`);
+      const live = await api<{ version: string; build?: string | null }>(p, "/api/status").catch(() => undefined);
+      if (!fresh || !live) return;
+      // This process still runs the old code, but installInfo() reads the copy that was installed a
+      // moment ago: the one a restart would run.
+      const notice = updateNotice({ version: live.version, build: live.build ?? null }, { version: fresh, build: buildIdOf(installInfo()) }, p);
+      if (notice) console.log(notice);
     });
 }

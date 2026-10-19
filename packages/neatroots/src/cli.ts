@@ -204,7 +204,7 @@ program
       return;
     }
     const s = await api<any>(p, "/api/status");
-    console.log(`neatroots ${s.version} on http://localhost:${s.port} (up ${Math.round(s.uptime_ms / 1000)}s)`);
+    console.log(`neatroots ${s.version}${s.build ? ` (${s.build})` : ""} on http://localhost:${s.port} (up ${Math.round(s.uptime_ms / 1000)}s)`);
     console.log(`  runs ${s.stats.runs} · spans ${s.stats.spans} · findings ${s.stats.findings} · ${(s.stats.bytes / 1024 / 1024).toFixed(1)} MB`);
     console.log(`  machine ${s.tier.memoryGb} GB (${s.tier.tier}) · ${s.tier.platform}`);
     if (s.engine) {

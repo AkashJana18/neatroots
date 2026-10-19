@@ -376,6 +376,8 @@ curl -fsSL https://raw.githubusercontent.com/neatlogs/neatroots/main/install.sh 
 
 Uninstalling keeps `~/.neatroots`, which holds your runs, settings and Laya. Delete that folder to remove them too. API keys stay in the Keychain under "neatroots".
 
+If a neatroots you started by hand is still running, `neatroots update` ends by naming the build it is running and saying to restart it. A release candidate and its release carry the same version (`v0.2.9-rc.1` and `v0.2.9` both report 0.2.9), so the update compares the build instead: the release tag, or the commit of a source build. `neatroots status` shows which build is answering.
+
 ## Troubleshooting
 
 | Problem | Try |

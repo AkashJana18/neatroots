@@ -73,7 +73,17 @@ try {
 } catch {
   /* not a checkout */
 }
-fs.writeFileSync(path.join(stage, ".neatroots-bundle"), `${JSON.stringify({ version, commit, built: new Date().toISOString() }, null, 2)}\n`);
+// The release tag, when this build is one: CI passes it in GITHUB_REF_NAME, a local build finds it
+// with git. /api/status reports it and `neatroots update` compares it, so a release candidate and
+// its release, which share a version, are told apart.
+let tag = null;
+try {
+  if (process.env.GITHUB_REF_TYPE === "tag" && process.env.GITHUB_REF_NAME) tag = process.env.GITHUB_REF_NAME;
+  else tag = execFileSync("git", ["describe", "--tags", "--exact-match", "HEAD"], { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim() || null;
+} catch {
+  /* not built from a tag */
+}
+fs.writeFileSync(path.join(stage, ".neatroots-bundle"), `${JSON.stringify({ version, tag, commit, built: new Date().toISOString() }, null, 2)}\n`);
 
 // ------------------------------------------------------------ links in the shipped docs resolve
 {
