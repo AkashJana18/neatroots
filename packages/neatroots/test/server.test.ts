@@ -475,6 +475,8 @@ describe("server", () => {
       expect(asset.status).toBe(200);
       expect(asset.headers.get("cache-control")).toMatch(/immutable/);
     }
+  });
+
   it("a malformed percent-escape in the path serves the app shell instead of a 500", async () => {
     const uiDir = findUiDir();
     if (!uiDir) return; // UI not built in this environment; skip rather than false-pass
